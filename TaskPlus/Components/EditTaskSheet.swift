@@ -1,0 +1,405 @@
+import SwiftUI
+
+struct EditTaskSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var taskStore: TaskStore
+    let task: TaskItem
+    
+    @State private var title: String
+    @State private var notes: String
+    @State private var estimatedTime: Int // 分単位
+    @State private var priority: TaskPriority
+    @State private var isCompleted: Bool
+    @State private var selectedCategoryId: UUID?
+    @State private var showingDeleteAlert = false
+    @State private var dueDate: Date?
+    @State private var notificationEnabled: Bool
+    @State private var notificationTime: Date?
+    @State private var showingNotificationTimePicker = false
+    
+    init(task: TaskItem, taskStore: TaskStore) {
+        self.task = task
+        self.taskStore = taskStore
+        self._title = State(initialValue: task.title)
+        self._notes = State(initialValue: task.notes ?? "")
+        self._estimatedTime = State(initialValue: 30) // デフォルト30分
+        self._priority = State(initialValue: task.priority)
+        self._isCompleted = State(initialValue: task.status == .done)
+        self._selectedCategoryId = State(initialValue: task.categoryId)
+        self._dueDate = State(initialValue: task.due)
+        self._notificationEnabled = State(initialValue: task.notificationEnabled)
+        self._notificationTime = State(initialValue: task.notificationTime)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                basicInfoSection
+                dueDateAndNotificationSection
+                detailSettingsSection
+                categorySection
+                completionSection
+                deleteSection
+            }
+            .navigationTitle("タスクを編集")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("キャンセル") {
+                        dismiss()
+                    }
+                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("保存") {
+                        saveTask()
+                    }
+                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                    .fontWeight(.semibold)
+                    .disabled(title.isEmpty)
+                }
+            }
+        }
+        .alert("タスクを削除", isPresented: $showingDeleteAlert) {
+            Button("キャンセル", role: .cancel) { }
+            Button("削除", role: .destructive) {
+                deleteTask()
+            }
+        } message: {
+            Text("このタスクを削除しますか？この操作は取り消せません。")
+        }
+    }
+    
+    private var basicInfoSection: some View {
+        Section("基本情報") {
+            TextField("タスク名", text: $title)
+                .textFieldStyle(CustomTextFieldStyle())
+            
+            TextField("メモ", text: $notes, axis: .vertical)
+                .textFieldStyle(CustomTextFieldStyle())
+                .lineLimit(3...6)
+        }
+    }
+    
+    private var dueDateAndNotificationSection: some View {
+        Section("期限と通知") {
+            dueDateRow
+            dueDatePicker
+            notificationToggle
+            notificationTimeRow
+            notificationTimePicker
+        }
+    }
+    
+    private var dueDateRow: some View {
+        HStack {
+            Image(systemName: "calendar")
+                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+            Text("期限")
+            Spacer()
+            if let dueDate = dueDate {
+                Text(dueDate.formatted(date: .abbreviated, time: .shortened))
+                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+            } else {
+                Text("未設定")
+                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+            }
+        }
+        .onTapGesture {
+            showingNotificationTimePicker = true
+        }
+    }
+    
+    private var dueDatePicker: some View {
+        Group {
+            if showingNotificationTimePicker {
+                DatePicker("期限", selection: Binding(
+                    get: { dueDate ?? Date() },
+                    set: { dueDate = $0 }
+                ), displayedComponents: [.date, .hourAndMinute])
+                .datePickerStyle(.compact)
+                .colorScheme(.dark)
+            }
+        }
+    }
+    
+    private var notificationToggle: some View {
+        Toggle("通知を有効にする", isOn: $notificationEnabled)
+            .tint(TaskPlusTheme.colors.neonPrimary)
+    }
+    
+    private var notificationTimeRow: some View {
+        Group {
+            if notificationEnabled {
+                HStack {
+                    Image(systemName: "bell")
+                        .foregroundColor(TaskPlusTheme.colors.neonAccent)
+                    Text("通知時刻")
+                    Spacer()
+                    if let notificationTime = notificationTime {
+                        Text(notificationTime.formatted(date: .omitted, time: .shortened))
+                            .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                    } else {
+                        Text("期限と同じ")
+                            .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                    }
+                }
+                .onTapGesture {
+                    // 通知時刻を個別に設定
+                    if notificationTime == nil {
+                        notificationTime = dueDate ?? Date()
+                    }
+                }
+            }
+        }
+    }
+    
+    private var notificationTimePicker: some View {
+        Group {
+            if notificationEnabled && notificationTime != nil {
+                DatePicker("通知時刻", selection: Binding(
+                    get: { notificationTime ?? Date() },
+                    set: { notificationTime = $0 }
+                ), displayedComponents: [.date, .hourAndMinute])
+                .datePickerStyle(.compact)
+                .colorScheme(.dark)
+            }
+        }
+    }
+    
+    private var detailSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("詳細設定")
+                .font(.headline)
+                .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                .padding(.horizontal)
+            
+            VStack(spacing: 12) {
+                priorityRow
+                estimatedTimeRow
+                CustomTimeSlider(value: $estimatedTime)
+            }
+            .padding(.horizontal)
+        }
+        .padding(.vertical, 8)
+    }
+    
+    private var priorityRow: some View {
+        HStack {
+            Image(systemName: "flag")
+                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+            Text("優先度")
+            Spacer()
+            Picker("", selection: $priority) {
+                ForEach(TaskPriority.allCases, id: \.self) { priority in
+                    PriorityButton(priority: priority, isSelected: self.priority == priority, action: {
+                        self.priority = priority
+                    })
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+    
+    private var estimatedTimeRow: some View {
+        HStack {
+            Image(systemName: "clock")
+                .foregroundColor(TaskPlusTheme.colors.neonAccent)
+            Text("推定時間")
+            Spacer()
+            Text("\(estimatedTime)分")
+                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+        }
+    }
+    
+    private var categorySection: some View {
+        Section("カテゴリ") {
+            ForEach(taskStore.categories) { category in
+                CategorySelectionButton(
+                    category: category,
+                    isSelected: selectedCategoryId == category.id
+                ) {
+                    selectedCategoryId = selectedCategoryId == category.id ? nil : category.id
+                }
+            }
+        }
+    }
+    
+    private var completionSection: some View {
+        Section {
+            Toggle("完了済み", isOn: $isCompleted)
+                .tint(TaskPlusTheme.colors.success)
+        }
+    }
+    
+    private var deleteSection: some View {
+        Section {
+            Button(action: { showingDeleteAlert = true }) {
+                HStack {
+                    Image(systemName: "trash")
+                        .foregroundColor(TaskPlusTheme.colors.danger)
+                    Text("タスクを削除")
+                        .foregroundColor(TaskPlusTheme.colors.danger)
+                }
+            }
+        }
+    }
+    
+    private func saveTask() {
+        var updatedTask = task
+        updatedTask.title = title
+        updatedTask.notes = notes.isEmpty ? nil : notes
+        updatedTask.due = dueDate
+        updatedTask.priority = priority
+        updatedTask.categoryId = selectedCategoryId
+        updatedTask.updatedAt = Date()
+        
+        // 通知設定を更新
+        taskStore.updateTaskNotification(updatedTask, notificationEnabled: notificationEnabled, notificationTime: notificationTime)
+        
+        // 完了状態を更新
+        if isCompleted && updatedTask.status != .done {
+            taskStore.completeTask(updatedTask)
+        }
+        
+        dismiss()
+    }
+    
+    private func deleteTask() {
+        taskStore.deleteTask(task)
+        dismiss()
+    }
+}
+
+// カスタムテキストフィールドスタイル
+struct CustomTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(TaskPlusTheme.colors.surface)
+            )
+            .foregroundColor(TaskPlusTheme.colors.textPrimary)
+    }
+}
+
+// カスタムトグルスイッチスタイル
+struct CustomToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button(action: { configuration.isOn.toggle() }) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(configuration.isOn ? TaskPlusTheme.colors.neonPrimary : TaskPlusTheme.colors.surface)
+                .frame(width: 51, height: 31)
+                .overlay(
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 27, height: 27)
+                        .offset(x: configuration.isOn ? 10 : -10)
+                        .animation(.spring(response: 0.2), value: configuration.isOn)
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// カスタム時間スライダー
+struct CustomTimeSlider: View {
+    @Binding var value: Int
+    
+    private let timeOptions = [15, 30, 45, 60, 90, 120, 180, 240, 300]
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(timeOptions.indices, id: \.self) { index in
+                let timeOption = timeOptions[index]
+                let isSelected = value == timeOption
+                
+                Button(action: { value = timeOption }) {
+                    Text("\(timeOption)分")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(isSelected ? TaskPlusTheme.colors.neonPrimary : TaskPlusTheme.colors.surface)
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+}
+
+// 優先度ボタン
+struct PriorityButton: View {
+    let priority: TaskPriority
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "flag.fill")
+                    .font(.caption)
+                    .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
+                
+                Text(priority.displayName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? TaskPlusTheme.colors.neonPrimary : TaskPlusTheme.colors.surface)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// カテゴリ選択ボタン
+struct CategorySelectionButton: View {
+    let category: Category
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: category.icon.systemName)
+                    .font(.title3)
+                    .foregroundColor(isSelected ? .white : category.color.color)
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle()
+                            .fill(isSelected ? category.color.color : category.color.color.opacity(0.1))
+                    )
+                
+                Text(category.name)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textPrimary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? category.color.color : TaskPlusTheme.colors.surface)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+#Preview {
+            EditTaskSheet(
+            task: TaskItem(title: "サンプルタスク"),
+            taskStore: TaskStore()
+        )
+}
