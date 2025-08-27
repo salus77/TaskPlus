@@ -196,7 +196,7 @@ struct AnyCodable: Codable, Hashable {
 
 // MARK: - Legacy Models for Backward Compatibility
 struct TaskItem: Identifiable, Hashable {
-    let id = UUID()
+    let id: UUID
     var title: String
     var notes: String?
     var due: Date?
@@ -209,8 +209,12 @@ struct TaskItem: Identifiable, Hashable {
     var sortOrder: Int // 並び替え順序を保存するフィールドを追加
     var notificationEnabled: Bool // 通知の有効/無効
     var notificationTime: Date? // 通知時刻（期限とは別に設定可能）
+    var originalStatus: TaskStatus? // 完了前のステータスを記録
+    var isRestoring: Bool = false // 復元時のアニメーション制御用
+
     
     init(title: String, notes: String? = nil, due: Date? = nil, priority: TaskPriority = .normal, context: TaskContext = .none, categoryId: UUID? = nil, sortOrder: Int = 0, notificationEnabled: Bool = true, notificationTime: Date? = nil) {
+        self.id = UUID()  // 初期化時に一度だけUUIDを生成
         self.title = title
         self.notes = notes
         self.due = due
@@ -223,6 +227,26 @@ struct TaskItem: Identifiable, Hashable {
         self.sortOrder = sortOrder
         self.notificationEnabled = notificationEnabled
         self.notificationTime = notificationTime
+        self.originalStatus = nil
+    }
+    
+    // 既存のタスクをコピーするためのイニシャライザ
+    init(copying task: TaskItem, withNewStatus status: TaskStatus? = nil) {
+        self.id = task.id  // 既存のIDを保持
+        self.title = task.title
+        self.notes = task.notes
+        self.due = task.due
+        self.createdAt = task.createdAt
+        self.updatedAt = Date()
+        self.status = status ?? task.status
+        self.priority = task.priority
+        self.context = task.context
+        self.categoryId = task.categoryId
+        self.sortOrder = task.sortOrder
+        self.notificationEnabled = task.notificationEnabled
+        self.notificationTime = task.notificationTime
+        self.originalStatus = task.originalStatus
+        self.isRestoring = task.isRestoring
     }
     
     // Convert to generic TaskData
@@ -283,6 +307,8 @@ enum TaskStatus: String, CaseIterable {
     case done = "done"
     case deleted = "deleted"
 }
+
+
 
 enum TaskPriority: String, CaseIterable {
     case low = "low"

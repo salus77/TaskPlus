@@ -179,18 +179,38 @@ class TaskStore: ObservableObject {
     
     // MARK: - Task Management
     func addTask(_ task: TaskItem) {
+        print("DEBUG: addTask called with title: '\(task.title)'")
+        print("DEBUG: Current inboxTasks count: \(inboxTasks.count)")
+        
         var newTask = task
-        newTask.sortOrder = inboxTasks.count // 最後の順序を設定
-        inboxTasks.append(newTask)
-        updateGenericData()
+        // 既存のタスクの最大sortOrder + 1を設定
+        let maxSortOrder = inboxTasks.map { $0.sortOrder }.max() ?? -1
+        newTask.sortOrder = maxSortOrder + 1
+        print("DEBUG: Setting sortOrder to: \(newTask.sortOrder)")
+        
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            // 直接配列に追加（@Publishedプロパティの変更が自動的に通知される）
+            inboxTasks.append(newTask)
+        }
+        print("DEBUG: Task added. New inboxTasks count: \(inboxTasks.count)")
+        
+        // UIの更新を強制するために、objectWillChangeを明示的に送信
+        objectWillChange.send()
         
         // 通知をスケジュール
         if newTask.notificationEnabled {
             scheduleNotificationForTask(newTask)
         }
         
+        // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .soft)
         impactFeedback.impactOccurred()
+        
+        // 外部データの更新は非同期で実行
+        DispatchQueue.global(qos: .utility).async {
+            self.updateGenericData()
+        }
     }
     
     // MARK: - Notification Management
@@ -276,39 +296,132 @@ class TaskStore: ObservableObject {
     
     func moveToToday(_ task: TaskItem) {
         guard let index = inboxTasks.firstIndex(where: { $0.id == task.id }) else { return }
-        var updatedTask = task
-        updatedTask.status = .today
+        // 新しいcopyingイニシャライザを使用して、既存のIDを保持
+        var updatedTask = TaskItem(copying: task, withNewStatus: .today)
         updatedTask.updatedAt = Date()
         
-        inboxTasks.remove(at: index)
-        todayTasks.append(updatedTask)
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            inboxTasks.remove(at: index)
+            todayTasks.append(updatedTask)
+        }
+        updateGenericData()
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
+    }
+    
+    func moveToInbox(_ task: TaskItem) {
+        guard let index = todayTasks.firstIndex(where: { $0.id == task.id }) else { return }
+        // 新しいcopyingイニシャライザを使用して、既存のIDを保持
+        var updatedTask = TaskItem(copying: task, withNewStatus: .inbox)
+        updatedTask.updatedAt = Date()
+        
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            todayTasks.remove(at: index)
+            inboxTasks.append(updatedTask)
+        }
         updateGenericData()
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
         impactFeedback.impactOccurred()
     }
     
     func completeTask(_ task: TaskItem) {
-        var updatedTask = task
-        updatedTask.status = .done
+        // 新しいcopyingイニシャライザを使用して、既存のIDを保持
+        var updatedTask = TaskItem(copying: task, withNewStatus: .done)
+        updatedTask.originalStatus = task.status // 完了前のステータスを記録
         updatedTask.updatedAt = Date()
         
-        if let index = inboxTasks.firstIndex(where: { $0.id == task.id }) {
-            inboxTasks.remove(at: index)
-        } else if let index = todayTasks.firstIndex(where: { $0.id == task.id }) {
-            todayTasks.remove(at: index)
+        // 明示的なアニメーション制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            if let index = inboxTasks.firstIndex(where: { $0.id == task.id }) {
+                inboxTasks.remove(at: index)
+            } else if let index = todayTasks.firstIndex(where: { $0.id == task.id }) {
+                todayTasks.remove(at: index)
+            }
+            
+            doneTasks.append(updatedTask)
         }
         
-        doneTasks.append(updatedTask)
+        // UIの更新を強制するために、objectWillChangeを明示的に送信
+        objectWillChange.send()
+        
         updateGenericData()
         let notificationFeedback = UINotificationFeedbackGenerator()
         notificationFeedback.notificationOccurred(.success)
     }
     
+    // 完了したタスクを再開する（元のステータスに戻す）
+    func restoreTask(_ task: TaskItem) {
+        print("DEBUG: restoreTask called for task: '\(task.title)' with ID: \(task.id)")
+        print("DEBUG: Current inboxTasks count: \(inboxTasks.count), doneTasks count: \(doneTasks.count)")
+        print("DEBUG: Task originalStatus: \(String(describing: task.originalStatus))")
+        
+        // doneTasksから削除
+        if let index = doneTasks.firstIndex(where: { $0.id == task.id }) {
+            let removedTask = doneTasks.remove(at: index)
+            print("DEBUG: Task removed from doneTasks: '\(removedTask.title)'")
+            print("DEBUG: Removed task originalStatus: \(String(describing: removedTask.originalStatus))")
+            
+            // 元のステータスに基づいて適切なリストに追加
+            if removedTask.originalStatus == .today {
+                            // 元のステータスがTodayの場合は、Todayに復元
+            var updatedTask = removedTask
+            updatedTask.status = .today
+            updatedTask.updatedAt = Date()
+            updatedTask.isRestoring = true // 復元フラグを設定
+            print("DEBUG: Task restored to todayTasks: '\(updatedTask.title)' with status: \(updatedTask.status)")
+            
+            // 復元時のアニメーション（下から上にスライドイン）
+            withAnimation(.easeInOut(duration: 0.4).delay(0.1)) {
+                todayTasks.append(updatedTask)
+            }
+            } else {
+                // 元のステータスがInboxの場合は、Inboxに復元
+                var updatedTask = removedTask
+                updatedTask.status = .inbox
+                updatedTask.updatedAt = Date()
+                updatedTask.isRestoring = true // 復元フラグを設定
+                print("DEBUG: Task restored to inboxTasks: '\(updatedTask.title)' with status: \(updatedTask.status)")
+                
+                // 復元時のアニメーション（下から上にスライドイン）
+                withAnimation(.easeInOut(duration: 0.4).delay(0.1)) {
+                    inboxTasks.append(updatedTask)
+            }
+            }
+        }
+        
+        print("DEBUG: After restore - inboxTasks count: \(inboxTasks.count), doneTasks count: \(doneTasks.count)")
+        print("DEBUG: inboxTasks titles: \(inboxTasks.map { $0.title })")
+        print("DEBUG: inboxTasks with status: \(inboxTasks.map { "\($0.title): \($0.status)" })")
+        
+        // UIの更新を強制するために、objectWillChangeを明示的に送信
+        objectWillChange.send()
+        
+        // 復元フラグをリセット（アニメーション完了後）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
+            if let index = inboxTasks.firstIndex(where: { $0.id == task.id }) {
+                inboxTasks[index].isRestoring = false
+                print("DEBUG: Reset isRestoring flag for task: '\(inboxTasks[index].title)'")
+            } else if let index = todayTasks.firstIndex(where: { $0.id == task.id }) {
+                todayTasks[index].isRestoring = false
+                print("DEBUG: Reset isRestoring flag for task: '\(todayTasks[index].title)'")
+            }
+        }
+        
+        updateGenericData()
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
+    }
+    
     func deleteTask(_ task: TaskItem) {
-        if let index = inboxTasks.firstIndex(where: { $0.id == task.id }) {
-            inboxTasks.remove(at: index)
-        } else if let index = todayTasks.firstIndex(where: { $0.id == task.id }) {
-            todayTasks.remove(at: index)
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.easeInOut(duration: 0.4)) {
+            if let index = inboxTasks.firstIndex(where: { $0.id == task.id }) {
+                inboxTasks.remove(at: index)
+            } else if let index = todayTasks.firstIndex(where: { $0.id == task.id }) {
+                todayTasks.remove(at: index)
+            }
         }
         
         // 関連する通知を削除
@@ -324,7 +437,8 @@ class TaskStore: ObservableObject {
     
     func snoozeOneDay(_ task: TaskItem) {
         guard let index = todayTasks.firstIndex(where: { $0.id == task.id }) else { return }
-        var updatedTask = task
+        // 新しいcopyingイニシャライザを使用して、既存のIDを保持
+        var updatedTask = TaskItem(copying: task)
         updatedTask.due = Calendar.current.date(byAdding: .day, value: 1, to: Date())
         updatedTask.updatedAt = Date()
         
@@ -335,33 +449,36 @@ class TaskStore: ObservableObject {
     }
     
     func reorderTasks(in section: TaskStatus, from source: IndexSet, to destination: Int) {
-        switch section {
-        case .inbox:
-            inboxTasks.move(fromOffsets: source, toOffset: destination)
-            // 並び替え後にsortOrderを更新
-            for (index, task) in inboxTasks.enumerated() {
-                var updatedTask = task
-                updatedTask.sortOrder = index
-                inboxTasks[index] = updatedTask
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            switch section {
+            case .inbox:
+                inboxTasks.move(fromOffsets: source, toOffset: destination)
+                // 並び替え後にsortOrderを更新
+                for (index, task) in inboxTasks.enumerated() {
+                    var updatedTask = task
+                    updatedTask.sortOrder = index
+                    inboxTasks[index] = updatedTask
+                }
+            case .today:
+                todayTasks.move(fromOffsets: source, toOffset: destination)
+                // 並び替え後にsortOrderを更新
+                for (index, task) in todayTasks.enumerated() {
+                    var updatedTask = task
+                    updatedTask.sortOrder = index
+                    todayTasks[index] = updatedTask
+                }
+            case .done:
+                doneTasks.move(fromOffsets: source, toOffset: destination)
+                // 並び替え後にsortOrderを更新
+                for (index, task) in doneTasks.enumerated() {
+                    var updatedTask = task
+                    updatedTask.sortOrder = index
+                    doneTasks[index] = updatedTask
+                }
+            case .deleted:
+                break
             }
-        case .today:
-            todayTasks.move(fromOffsets: source, toOffset: destination)
-            // 並び替え後にsortOrderを更新
-            for (index, task) in todayTasks.enumerated() {
-                var updatedTask = task
-                updatedTask.sortOrder = index
-                todayTasks[index] = updatedTask
-            }
-        case .done:
-            doneTasks.move(fromOffsets: source, toOffset: destination)
-            // 並び替え後にsortOrderを更新
-            for (index, task) in doneTasks.enumerated() {
-                var updatedTask = task
-                updatedTask.sortOrder = index
-                doneTasks[index] = updatedTask
-            }
-        case .deleted:
-            break
         }
         // 並び替え後はupdateGenericData()を呼び出さない（順序が保持される）
     }
@@ -384,17 +501,20 @@ class TaskStore: ObservableObject {
     }
     
     func deleteCategory(_ category: Category) {
-        categories.removeAll { $0.id == category.id }
-        // そのカテゴリを使用しているタスクのカテゴリIDをクリア
-        inboxTasks = inboxTasks.map { task in
-            var updatedTask = task
-            if updatedTask.categoryId == category.id { updatedTask.categoryId = nil }
-            return updatedTask
-        }
-        todayTasks = todayTasks.map { task in
-            var updatedTask = task
-            if updatedTask.categoryId == category.id { updatedTask.categoryId = nil }
-            return updatedTask
+        // Apple公式の方法でアニメーションを制御
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+            categories.removeAll { $0.id == category.id }
+            // そのカテゴリを使用しているタスクのカテゴリIDをクリア
+            inboxTasks = inboxTasks.map { task in
+                var updatedTask = task
+                if updatedTask.categoryId == category.id { updatedTask.categoryId = nil }
+                return updatedTask
+            }
+            todayTasks = todayTasks.map { task in
+                var updatedTask = task
+                if updatedTask.categoryId == category.id { updatedTask.categoryId = nil }
+                return updatedTask
+            }
         }
         updateGenericData()
         let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)

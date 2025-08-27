@@ -4,6 +4,9 @@ struct TodayView: View {
     @ObservedObject var taskStore: TaskStore
     @ObservedObject var guideManager: GuideModeManager
     @State private var showingAddSheet = false
+    @State private var selectedSortOption: SortOption = .manual
+    @State private var hideCompletedTasks: Bool = false
+    @State private var quickTaskText: String = ""
     
     var body: some View {
         NavigationView {
@@ -27,14 +30,53 @@ struct TodayView: View {
                 } else {
                     taskListView
                 }
+                
+                // クイックタスク追加バー（画面下部）
+                VStack(spacing: 0) {
+                    Divider()
+                        .background(TaskPlusTheme.colors.surface)
+                    
+                    InlineAddBar(text: $quickTaskText) { text in
+                        addQuickTask()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
             }
             .background(TaskPlusTheme.colors.bg)
             .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddSheet = true }) {
-                        Image(systemName: "plus")
+                    Menu {
+                        // 並び替えオプション
+                        Picker("並び替え", selection: $selectedSortOption) {
+                            ForEach(SortOption.allCases, id: \.self) { option in
+                                Label(option.rawValue, systemImage: option.icon)
+                                    .tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        
+                        Divider()
+                        
+                        // 実行済みタスクの表示/非表示切り替え
+                        Button(action: {
+                            hideCompletedTasks.toggle()
+                        }) {
+                            Label(
+                                hideCompletedTasks ? "実行済みを表示" : "実行済みを非表示",
+                                systemImage: hideCompletedTasks ? "eye" : "eye.slash"
+                            )
+                        }
+                        
+                        Divider()
+                        
+                        Button("新しいタスクを追加") {
+                            showingAddSheet = true
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
                             .foregroundColor(TaskPlusTheme.colors.neonPrimary)
                             .font(.title2)
                     }
@@ -50,7 +92,7 @@ struct TodayView: View {
         VStack(spacing: 24) {
             Spacer()
             
-            Image(systemName: "bolt.fill")
+            Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 64))
                 .foregroundColor(TaskPlusTheme.colors.neonPrimary)
                 .shadow(color: TaskPlusTheme.colors.neonPrimary.opacity(0.6), radius: 16)
@@ -72,6 +114,57 @@ struct TodayView: View {
         .padding(.horizontal, 32)
     }
     
+    // フィルタリングされたタスクリスト（TodayViewでは今日のタスクのみを表示）
+    private var filteredTasks: [TaskItem] {
+        return taskStore.todayTasks
+    }
+    
+    // 並び替え済みのタスクリスト
+    private var sortedTasks: [TaskItem] {
+        let todayTasks = taskStore.todayTasks
+        switch selectedSortOption {
+        case .manual:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                task1.sortOrder < task2.sortOrder
+            }
+        case .priority:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                let priority1 = task1.priority.rawValue
+                let priority2 = task2.priority.rawValue
+                if priority1 == priority2 {
+                    return task1.sortOrder < task2.sortOrder
+                }
+                return priority1 > priority2
+            }
+        case .dueDate:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                let date1 = task1.due ?? Date.distantFuture
+                let date2 = task2.due ?? Date.distantFuture
+                if date1 == date2 {
+                    return task1.sortOrder < task2.sortOrder
+                }
+                return date1 < date2
+            }
+        case .category:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                let category1 = task1.categoryId?.uuidString ?? ""
+                let category2 = task2.categoryId?.uuidString ?? ""
+                if category1 == category2 {
+                    return task1.sortOrder < task2.sortOrder
+                }
+                return category1 < category2
+            }
+        case .createdAt:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                task1.createdAt < task2.createdAt
+            }
+        case .title:
+            return todayTasks.sorted { (task1: TaskItem, task2: TaskItem) in
+                task1.title.localizedCaseInsensitiveCompare(task2.title) == .orderedAscending
+            }
+        }
+    }
+    
     private var taskListView: some View {
         List {
             // Progress header
@@ -85,24 +178,34 @@ struct TodayView: View {
             }
             
             // Today tasks
-            if !taskStore.todayTasks.isEmpty {
+            if !sortedTasks.isEmpty {
                 Section {
-                    ForEach(taskStore.todayTasks) { task in
+                    ForEach(sortedTasks) { task in
                         TaskRow(
                             task: task,
-                            isInbox: false,
+                            isInbox: true, // InboxViewと同じデザインにする
+                            isTodayView: true, // TodayViewでのスワイプアクション制御
                             onComplete: { taskStore.completeTask(task) },
                             onDelete: { taskStore.deleteTask(task) },
                             onMoveToToday: { },
                             taskStore: taskStore
                         )
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button(action: {
+                                taskStore.moveToInbox(task)
+                            }) {
+                                Label("Inboxに戻す", systemImage: "tray")
+                            }
+                            .tint(TaskPlusTheme.colors.neonPrimary)
+                        }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+
                     }
-                    .onMove(perform: { source, destination in
+                    .onMove(perform: selectedSortOption == .manual ? { source, destination in
                         taskStore.reorderTasks(in: .today, from: source, to: destination)
-                    })
+                    } : nil)
                 } header: {
                     HStack {
                         Text("今日のタスク")
@@ -123,10 +226,30 @@ struct TodayView: View {
             }
             
             // Completed tasks
-            if taskStore.todayCompletedCount > 0 {
+            if !hideCompletedTasks && !taskStore.doneTasks.isEmpty {
                 Section {
                     ForEach(taskStore.doneTasks.filter { $0.status == .done }, id: \.id) { task in
-                        completedTaskRow(task)
+                        TaskRow(
+                            task: task,
+                            isInbox: true, // InboxViewと同じデザインにする
+                            isTodayView: true, // TodayViewでのスワイプアクション制御
+                            onComplete: { taskStore.restoreTask(task) }, // 完了済みタスクを再開
+                            onDelete: { taskStore.deleteTask(task) },
+                            onMoveToToday: { },
+                            taskStore: taskStore
+                        )
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button(action: {
+                                taskStore.restoreTask(task)
+                            }) {
+                                Label("再開", systemImage: "arrow.clockwise")
+                            }
+                            .tint(TaskPlusTheme.colors.neonPrimary)
+                        }
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        // Apple公式の方法でアニメーションを制御するため、transitionは削除
                     }
                 } header: {
                     HStack {
@@ -137,7 +260,7 @@ struct TodayView: View {
                         
                         Spacer()
                         
-                        Text("\(taskStore.todayCompletedCount)")
+                        Text("\(taskStore.doneTasks.filter { $0.status == .done }.count)")
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(TaskPlusTheme.colors.textSecondary)
@@ -149,41 +272,47 @@ struct TodayView: View {
         }
         .listStyle(PlainListStyle())
         .background(TaskPlusTheme.colors.bg)
+        // リスト更新時のアニメーション制御
+        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: taskStore.todayTasks.count)
+        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: taskStore.doneTasks.count)
     }
     
-    private func completedTaskRow(_ task: TaskItem) -> some View {
-        HStack(spacing: 14) {
-            // Completed indicator
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(TaskPlusTheme.colors.success)
-                .font(.title3)
-            
-            // Content
-            VStack(alignment: .leading, spacing: 4) {
-                Text(task.title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
-                    .strikethrough()
-                
-                if let notes = task.notes, !notes.isEmpty {
-                    Text(notes)
-                        .font(.caption)
-                        .foregroundColor(TaskPlusTheme.colors.textSecondary.opacity(0.7))
-                        .lineLimit(1)
-                }
-            }
-            
-            Spacer()
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(TaskPlusTheme.colors.surface.opacity(0.5))
+    // クイックタスク追加処理
+    private func addQuickTask() {
+        let trimmedText = quickTaskText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
+        // 新しいタスクを作成
+        let task = TaskItem(
+            title: trimmedText,
+            sortOrder: taskStore.todayTasks.count,
+            notificationEnabled: true,
+            notificationTime: nil
         )
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
+        
+        // タスクをTodayに追加
+        taskStore.addTask(task)
+        
+        // タスクをTodayに移動
+        if let addedTask = taskStore.inboxTasks.last {
+            var updatedTask = addedTask
+            updatedTask.status = .today
+            updatedTask.updatedAt = Date()
+            
+            // inboxTasksから削除してtodayTasksに追加
+            if let index = taskStore.inboxTasks.firstIndex(where: { $0.id == addedTask.id }) {
+                taskStore.inboxTasks.remove(at: index)
+            }
+            taskStore.todayTasks.append(updatedTask)
+        }
+        
+        // 入力フィールドをクリア
+        quickTaskText = ""
+        
+        // タスク追加後、ガイドの次のステップに進む
+        if guideManager.shouldShowGuide {
+            guideManager.nextStep()
+        }
     }
     
     // コンシェルジュカード
@@ -209,7 +338,7 @@ struct TodayView: View {
         } else {
             return ConciergeCard(
                 message: "どれから始めますか？",
-                icon: "bolt.fill",
+                icon: "hand.point.up",
                 actionText: "タスクをタップして詳細を確認し、集中モードに入りましょう！"
             ) {
                 // ガイドの次のステップに進む
