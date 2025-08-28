@@ -16,6 +16,7 @@ struct EditTaskSheet: View {
     @State private var notificationTime: Date?
     @State private var showingNotificationTimePicker = false
     @State private var selectedTags: [String]
+    @State private var showingEstimatedTimePicker = false
     
     init(task: TaskItem, taskStore: TaskStore) {
         self.task = task
@@ -36,8 +37,8 @@ struct EditTaskSheet: View {
         NavigationView {
             Form {
                 basicInfoSection
-                dueDateAndNotificationSection
                 detailSettingsSection
+                dueDateAndNotificationSection
                 categorySection
                 tagSection
                 deleteSection
@@ -170,20 +171,18 @@ struct EditTaskSheet: View {
     }
     
     private var detailSettingsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("詳細設定")
-                .font(.headline)
-                .foregroundColor(TaskPlusTheme.colors.textPrimary)
-                .padding(.horizontal)
-            
+        Section {
             VStack(spacing: 12) {
                 priorityRow
                 estimatedTimeRow
-                CustomTimeSlider(value: $estimatedTime)
+                estimatedTimePicker
             }
-            .padding(.horizontal)
+        } header: {
+            Text("詳細設定")
+                .font(.subheadline)
+                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                .textCase(nil)
         }
-        .padding(.vertical, 8)
     }
     
     private var priorityRow: some View {
@@ -209,8 +208,60 @@ struct EditTaskSheet: View {
                 .foregroundColor(TaskPlusTheme.colors.neonAccent)
             Text("推定時間")
             Spacer()
-            Text("\(estimatedTime)分")
-                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+            Button(action: {
+                showingEstimatedTimePicker = true
+            }) {
+                HStack(spacing: 4) {
+                    Text("\(estimatedTime)分")
+                        .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+    }
+    
+    private var estimatedTimePicker: some View {
+        Group {
+            if showingEstimatedTimePicker {
+                HStack {
+                    Spacer()
+                    VStack {
+                        HStack {
+                            Text("推定時間を選択")
+                                .font(.headline)
+                                .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                            Spacer()
+                            Button("完了") {
+                                showingEstimatedTimePicker = false
+                            }
+                            .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                            .fontWeight(.semibold)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
+                        
+                        Picker("推定時間", selection: $estimatedTime) {
+                            ForEach([15, 30, 45, 60, 90, 120, 180, 240, 300], id: \.self) { time in
+                                Text("\(time)分").tag(time)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 150)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                    }
+                    .background(TaskPlusTheme.colors.surface)
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                    .padding(.horizontal)
+                    Spacer()
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: showingEstimatedTimePicker)
+            }
         }
     }
     
@@ -325,35 +376,7 @@ struct CustomToggleStyle: ToggleStyle {
     }
 }
 
-// カスタム時間スライダー
-struct CustomTimeSlider: View {
-    @Binding var value: Int
-    
-    private let timeOptions = [15, 30, 45, 60, 90, 120, 180, 240, 300]
-    
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(timeOptions.indices, id: \.self) { index in
-                let timeOption = timeOptions[index]
-                let isSelected = value == timeOption
-                
-                Button(action: { value = timeOption }) {
-                    Text("\(timeOption)分")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(isSelected ? TaskPlusTheme.colors.neonPrimary : TaskPlusTheme.colors.surface)
-                        )
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-        }
-    }
-}
+
 
 // 優先度ボタン
 struct PriorityButton: View {
@@ -363,20 +386,20 @@ struct PriorityButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "flag.fill")
-                    .font(.caption)
+                    .font(.title3)
                     .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
                 
                 Text(priority.displayName)
-                    .font(.caption)
-                    .fontWeight(.medium)
+                    .font(.body)
+                    .fontWeight(.semibold)
                     .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textSecondary)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 36)
+            .frame(height: 48)
             .background(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(isSelected ? TaskPlusTheme.colors.neonPrimary : TaskPlusTheme.colors.surface)
             )
         }

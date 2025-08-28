@@ -70,21 +70,22 @@ struct TaskRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // 編集アイコン（右側）
-            Button(action: {
-                print("DEBUG: 編集アイコンがタップされました")
-                print("DEBUG: タスクID: \(task.id)")
-                print("DEBUG: タスクのタイトル: '\(task.title)'")
-                
-                // 編集シートを表示
-                showingEditSheet = true
-            }) {
-                Image(systemName: "pencil.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+            // 再生アイコン（右端、TodayViewでのみ表示）
+            if isTodayView {
+                Button(action: {
+                    print("DEBUG: 再生アイコンがタップされました")
+                    print("DEBUG: タスクID: \(task.id)")
+                    print("DEBUG: タスクのタイトル: '\(task.title)'")
+                    print("DEBUG: 将来的に機能を追加予定")
+                }) {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.leading, 8)
             }
-            .buttonStyle(PlainButtonStyle())
-            .padding(.horizontal, 8) // タップ領域を拡大
+
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 20)
@@ -241,7 +242,9 @@ struct TaskRow: View {
             } else if isTodayView {
                 // TodayViewではInboxアイコンを表示（Inboxに戻す）
                 Button(action: {
-                    swipeOutAndExecute(onComplete, direction: .right)
+                    swipeOutAndExecute({
+                        taskStore.moveToInbox(task)
+                    }, direction: .right)
                 }) {
                     Label("Inboxに戻す", systemImage: "tray")
                 }
@@ -264,22 +267,27 @@ struct TaskRow: View {
                 .tint(TaskPlusTheme.colors.success)
             }
         }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            if isInbox {
-                Button(action: {
-                    swipeOutAndExecute(onDelete, direction: .left)
-                }) {
-                    Label("削除", systemImage: "trash.fill")
-                }
-                .tint(TaskPlusTheme.colors.danger)
-            } else {
-                Button(action: {
-                    swipeOutAndExecute(onDelete, direction: .left)
-                }) {
-                    Label("削除", systemImage: "trash.fill")
-                }
-                .tint(TaskPlusTheme.colors.danger)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            // 編集アクション
+            Button(action: {
+                print("DEBUG: 編集アクションがタップされました")
+                print("DEBUG: タスクID: \(task.id)")
+                print("DEBUG: タスクのタイトル: '\(task.title)'")
+                
+                // 編集シートを表示
+                showingEditSheet = true
+            }) {
+                Label("編集", systemImage: "pencil")
             }
+            .tint(TaskPlusTheme.colors.neonPrimary)
+            
+            // 削除アクション
+            Button(action: {
+                swipeOutAndExecute(onDelete, direction: .left)
+            }) {
+                Label("削除", systemImage: "trash.fill")
+            }
+            .tint(TaskPlusTheme.colors.danger)
         }
     }
     

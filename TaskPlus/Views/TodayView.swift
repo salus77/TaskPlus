@@ -280,14 +280,7 @@ struct TodayView: View {
                             onMoveToToday: { },
                             taskStore: taskStore
                         )
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            Button(action: {
-                                taskStore.moveToInbox(task)
-                            }) {
-                                Label("Inboxに戻す", systemImage: "tray")
-                            }
-                            .tint(TaskPlusTheme.colors.neonPrimary)
-                        }
+
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))

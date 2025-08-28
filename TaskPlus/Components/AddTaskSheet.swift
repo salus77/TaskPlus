@@ -14,6 +14,7 @@ struct AddTaskSheet: View {
     @State private var notificationTime: Date?
     @State private var showingDueDatePicker = false
     @State private var showingNotificationTimePicker = false
+    @State private var showingEstimatedTimePicker = false
     
     var body: some View {
         NavigationView {
@@ -139,7 +140,7 @@ struct AddTaskSheet: View {
         Section("詳細設定") {
             priorityRow
             estimatedTimeRow
-            CustomTimeSlider(value: $estimatedTime)
+            estimatedTimePicker
         }
     }
     
@@ -166,8 +167,60 @@ struct AddTaskSheet: View {
                 .foregroundColor(TaskPlusTheme.colors.neonAccent)
             Text("推定時間")
             Spacer()
-            Text("\(estimatedTime)分")
-                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+            Button(action: {
+                showingEstimatedTimePicker = true
+            }) {
+                HStack(spacing: 4) {
+                    Text("\(estimatedTime)分")
+                        .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption)
+                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+    }
+    
+    private var estimatedTimePicker: some View {
+        Group {
+            if showingEstimatedTimePicker {
+                HStack {
+                    Spacer()
+                    VStack {
+                        HStack {
+                            Text("推定時間を選択")
+                                .font(.headline)
+                                .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                            Spacer()
+                            Button("完了") {
+                                showingEstimatedTimePicker = false
+                            }
+                            .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                            .fontWeight(.semibold)
+                        }
+                        .padding(.horizontal)
+                        .padding(.top)
+                        
+                        Picker("推定時間", selection: $estimatedTime) {
+                            ForEach([15, 30, 45, 60, 90, 120, 180, 240, 300], id: \.self) { time in
+                                Text("\(time)分").tag(time)
+                            }
+                        }
+                        .pickerStyle(.wheel)
+                        .frame(height: 150)
+                        .padding(.horizontal)
+                        .padding(.bottom)
+                    }
+                    .background(TaskPlusTheme.colors.surface)
+                    .cornerRadius(12)
+                    .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
+                    .padding(.horizontal)
+                    Spacer()
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.3), value: showingEstimatedTimePicker)
+            }
         }
     }
     
