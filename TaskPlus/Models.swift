@@ -212,9 +212,13 @@ struct TaskItem: Identifiable, Hashable {
     var notificationTime: Date? // 通知時刻（期限とは別に設定可能）
     var originalStatus: TaskStatus? // 完了前のステータスを記録
     var isRestoring: Bool = false // 復元時のアニメーション制御用
+    var repeatEnabled: Bool = false // 繰り返しの有効/無効
+    var repeatType: RepeatType = .none // 繰り返しの種類
+    var repeatInterval: Int = 1 // 繰り返しの間隔
+    var repeatEndDate: Date? // 繰り返しの終了日
 
     
-    init(title: String, notes: String? = nil, due: Date? = nil, priority: TaskPriority = .normal, context: TaskContext = .none, categoryId: UUID? = nil, tags: [String] = [], sortOrder: Int = 0, notificationEnabled: Bool = true, notificationTime: Date? = nil) {
+    init(title: String, notes: String? = nil, due: Date? = nil, priority: TaskPriority = .normal, context: TaskContext = .none, categoryId: UUID? = nil, tags: [String] = [], sortOrder: Int = 0, notificationEnabled: Bool = true, notificationTime: Date? = nil, repeatEnabled: Bool = false, repeatType: RepeatType = .none, repeatInterval: Int = 1, repeatEndDate: Date? = nil) {
         self.id = UUID()  // 初期化時に一度だけUUIDを生成
         self.title = title
         self.notes = notes
@@ -230,6 +234,10 @@ struct TaskItem: Identifiable, Hashable {
         self.notificationEnabled = notificationEnabled
         self.notificationTime = notificationTime
         self.originalStatus = nil
+        self.repeatEnabled = repeatEnabled
+        self.repeatType = repeatType
+        self.repeatInterval = repeatInterval
+        self.repeatEndDate = repeatEndDate
     }
     
     // 既存のタスクをコピーするためのイニシャライザ
@@ -250,6 +258,10 @@ struct TaskItem: Identifiable, Hashable {
         self.notificationTime = task.notificationTime
         self.originalStatus = task.originalStatus
         self.isRestoring = task.isRestoring
+        self.repeatEnabled = task.repeatEnabled
+        self.repeatType = task.repeatType
+        self.repeatInterval = task.repeatInterval
+        self.repeatEndDate = task.repeatEndDate
     }
     
     // Convert to generic TaskData
@@ -339,6 +351,34 @@ enum TaskPriority: String, CaseIterable {
         case .low: return "低"
         case .normal: return "普通"
         case .high: return "高"
+        }
+    }
+}
+
+enum RepeatType: String, CaseIterable {
+    case none = "none"
+    case daily = "daily"
+    case weekly = "weekly"
+    case monthly = "monthly"
+    case yearly = "yearly"
+    
+    var displayName: String {
+        switch self {
+        case .none: return "なし"
+        case .daily: return "毎日"
+        case .weekly: return "毎週"
+        case .monthly: return "毎月"
+        case .yearly: return "毎年"
+        }
+    }
+    
+    var systemIcon: String {
+        switch self {
+        case .none: return ""
+        case .daily: return "calendar.badge.clock"
+        case .weekly: return "calendar.badge.clock"
+        case .monthly: return "calendar.badge.clock"
+        case .yearly: return "calendar.badge.clock"
         }
     }
 }

@@ -17,6 +17,11 @@ struct EditTaskSheet: View {
     @State private var showingNotificationTimePicker = false
     @State private var selectedTags: [String]
     @State private var showingEstimatedTimePicker = false
+    @State private var repeatEnabled: Bool
+    @State private var repeatType: RepeatType
+    @State private var repeatInterval: Int
+    @State private var repeatEndDate: Date?
+    @State private var showingEndDatePicker = false
     
     init(task: TaskItem, taskStore: TaskStore) {
         self.task = task
@@ -31,6 +36,10 @@ struct EditTaskSheet: View {
         self._notificationEnabled = State(initialValue: task.notificationEnabled)
         self._notificationTime = State(initialValue: task.notificationTime)
         self._selectedTags = State(initialValue: task.tags)
+        self._repeatEnabled = State(initialValue: task.repeatEnabled)
+        self._repeatType = State(initialValue: task.repeatType)
+        self._repeatInterval = State(initialValue: task.repeatInterval)
+        self._repeatEndDate = State(initialValue: task.repeatEndDate)
     }
     
     var body: some View {
@@ -39,6 +48,7 @@ struct EditTaskSheet: View {
                 basicInfoSection
                 detailSettingsSection
                 dueDateAndNotificationSection
+                repeatSection
                 categorySection
                 tagSection
                 deleteSection
@@ -305,7 +315,89 @@ struct EditTaskSheet: View {
         }
     }
     
-
+    private var repeatSection: some View {
+        Section("繰り返し設定") {
+            Toggle("繰り返しを有効にする", isOn: $repeatEnabled)
+                .tint(TaskPlusTheme.colors.neonPrimary)
+            
+            if repeatEnabled {
+                HStack {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundColor(TaskPlusTheme.colors.neonAccent)
+                    Text("繰り返しの種類")
+                    Spacer()
+                    Picker("", selection: $repeatType) {
+                        ForEach(RepeatType.allCases, id: \.self) { type in
+                            if type != .none {
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                }
+                
+                if repeatType != .none {
+                    HStack {
+                        Image(systemName: "number")
+                            .foregroundColor(TaskPlusTheme.colors.neonAccent)
+                        Text("間隔")
+                        Spacer()
+                        Picker("", selection: $repeatInterval) {
+                            ForEach(1...10, id: \.self) { interval in
+                                Text("\(interval)").tag(interval)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                    }
+                    
+                    HStack {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .foregroundColor(TaskPlusTheme.colors.neonAccent)
+                        Text("終了日")
+                        Spacer()
+                        if let endDate = repeatEndDate {
+                            Text(endDate.formatted(date: .abbreviated, time: .omitted))
+                                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                        } else {
+                            Text("なし")
+                                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                        }
+                    }
+                    .onTapGesture {
+                        showingEndDatePicker.toggle()
+                    }
+                    
+                    if showingEndDatePicker {
+                        VStack(spacing: 12) {
+                            DatePicker("終了日", selection: Binding(
+                                get: { repeatEndDate ?? Date() },
+                                set: { repeatEndDate = $0 }
+                            ), displayedComponents: .date)
+                                .datePickerStyle(.wheel)
+                                .labelsHidden()
+                                .colorScheme(.dark)
+                            
+                            HStack(spacing: 16) {
+                                Button("設定") {
+                                    showingEndDatePicker = false
+                                }
+                                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                
+                                Button("クリア") {
+                                    repeatEndDate = nil
+                                    showingEndDatePicker = false
+                                }
+                                .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
+                }
+            }
+        }
+    }
     
     private var deleteSection: some View {
         Section {
@@ -329,11 +421,16 @@ struct EditTaskSheet: View {
         updatedTask.categoryId = selectedCategoryId
         updatedTask.tags = selectedTags
         updatedTask.updatedAt = Date()
+        updatedTask.repeatEnabled = repeatEnabled
+        updatedTask.repeatType = repeatType
+        updatedTask.repeatInterval = repeatInterval
+        updatedTask.repeatEndDate = repeatEndDate
         
         // 通知設定を更新
         taskStore.updateTaskNotification(updatedTask, notificationEnabled: notificationEnabled, notificationTime: notificationTime)
         
-
+        // タスクを更新
+        taskStore.updateTask(updatedTask)
         
         dismiss()
     }

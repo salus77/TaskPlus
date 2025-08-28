@@ -9,6 +9,7 @@ struct TaskRow: View {
     let onMoveToToday: () -> Void
     
     @State private var showingEditSheet = false
+    @State private var showingPomodoroTimer = false
     @State private var isPressed = false
     @State private var isDragging = false
     @State private var isSwipingOut = false // スワイプアウトアニメーション用
@@ -67,6 +68,20 @@ struct TaskRow: View {
                         .opacity(task.status == .done ? 0.6 : 1.0)
                         .padding(.top, 4)
                 }
+                
+                // Repeat Icon
+                if task.repeatEnabled && task.repeatType != .none {
+                    HStack(spacing: 4) {
+                        Image(systemName: "repeat")
+                            .font(.caption)
+                            .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                        Text("\(task.repeatInterval)\(task.repeatType.displayName)")
+                            .font(.caption)
+                            .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                    }
+                    .opacity(task.status == .done ? 0.6 : 1.0)
+                    .padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
@@ -76,7 +91,7 @@ struct TaskRow: View {
                     print("DEBUG: 再生アイコンがタップされました")
                     print("DEBUG: タスクID: \(task.id)")
                     print("DEBUG: タスクのタイトル: '\(task.title)'")
-                    print("DEBUG: 将来的に機能を追加予定")
+                    showingPomodoroTimer = true
                 }) {
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 28))
@@ -229,6 +244,9 @@ struct TaskRow: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isDragging)
         .sheet(isPresented: $showingEditSheet) {
             EditTaskSheet(task: task, taskStore: taskStore)
+        }
+        .sheet(isPresented: $showingPomodoroTimer) {
+            PomodoroTimerView(task: task)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if isInbox && !isTodayView {
