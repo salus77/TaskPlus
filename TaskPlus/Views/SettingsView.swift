@@ -2,8 +2,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @ObservedObject var guideManager: GuideModeManager
     @ObservedObject var taskStore: TaskStore
+    @EnvironmentObject var notificationManager: NotificationManager
     @State private var showingAddCategory = false
     @State private var editingCategory: Category?
     @State private var showingExportSheet = false
@@ -11,36 +11,12 @@ struct SettingsView: View {
     @State private var exportData: Data?
     @State private var showingResetAlert = false
     @State private var showingNotificationSettings = false
+    @State private var showingTagManagement = false
     
     var body: some View {
         NavigationView {
             List {
-                // ガイドモード設定
-                Section("ガイドモード") {
-                    HStack {
-                        Image(systemName: "lightbulb")
-                            .foregroundColor(TaskPlusTheme.colors.neonPrimary)
-                        Text("ガイドモード")
-                        Spacer()
-                        Toggle("", isOn: $guideManager.isEnabled)
-                            .toggleStyle(SwitchToggleStyle(tint: TaskPlusTheme.colors.neonPrimary))
-                    }
-                    
-                    if guideManager.isEnabled {
-                        HStack {
-                            Image(systemName: "arrow.clockwise")
-                                .foregroundColor(TaskPlusTheme.colors.neonAccent)
-                            Text("ガイドをリセット")
-                            Spacer()
-                            Button("リセット") {
-                                guideManager.tutorialCompleted = false
-                                guideManager.isFirstLaunch = true
-                                guideManager.currentStep = 0
-                            }
-                            .foregroundColor(TaskPlusTheme.colors.neonAccent)
-                        }
-                    }
-                }
+
                 
                 // 通知設定
                 Section("通知設定") {
@@ -90,6 +66,8 @@ struct SettingsView: View {
                             .disabled(true)
                     }
                 }
+                
+
                 
                 // カテゴリ管理
                 Section("カテゴリ管理") {
@@ -186,8 +164,11 @@ struct SettingsView: View {
                     ShareSheet(activityItems: [exportData])
                 }
             }
-            .sheet(isPresented: $showingNotificationSettings) {
-                NotificationSettingsView(notificationManager: NotificationManager.shared)
+                            .sheet(isPresented: $showingNotificationSettings) {
+                    NotificationSettingsView(notificationManager: notificationManager)
+                }
+            .sheet(isPresented: $showingTagManagement) {
+                TagManagementSheet(taskStore: taskStore)
             }
             .fileImporter(
                 isPresented: $showingImportPicker,
@@ -270,7 +251,7 @@ struct SettingsView: View {
         // サンプルデータを再読み込み
         let sampleTasks = [
             TaskItem(title: "提案資料をまとめる", priority: .high, context: .work, categoryId: taskStore.categories.first?.id, sortOrder: 0, notificationEnabled: true, notificationTime: nil),
-            TaskItem(title: "牛乳を買う", context: .errand, categoryId: taskStore.categories[2].id, sortOrder: 1, notificationEnabled: true, notificationTime: nil),
+            TaskItem(title: "牛乳を買う", context: .errand, categoryId: taskStore.categories[1].id, sortOrder: 1, notificationEnabled: true, notificationTime: nil),
             TaskItem(title: "田中さんに電話", context: .call, categoryId: taskStore.categories.first?.id, sortOrder: 2, notificationEnabled: false, notificationTime: nil)
         ]
         
@@ -295,8 +276,5 @@ struct ShareSheet: UIViewControllerRepresentable {
 }
 
 #Preview {
-    SettingsView(
-        guideManager: GuideModeManager(),
-        taskStore: TaskStore()
-    )
+    SettingsView(taskStore: TaskStore())
 }

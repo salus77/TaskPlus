@@ -40,26 +40,18 @@ struct TaskRow: View {
             leadingIndicator
             
             // タスク情報（中央）
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(task.title)
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(task.status == .done ? TaskPlusTheme.colors.textSecondary : TaskPlusTheme.colors.textPrimary)
                     .strikethrough(task.status == .done, color: TaskPlusTheme.colors.textSecondary)
-                    .onTapGesture {
-                        // タイトルをタップした場合のみ編集シートを表示
-                        showingEditSheet = true
-                    }
                 
                 if let notes = task.notes, !notes.isEmpty {
                     Text(notes)
                         .font(.caption)
                         .foregroundColor(TaskPlusTheme.colors.textSecondary)
                         .lineLimit(2)
-                        .onTapGesture {
-                            // メモをタップした場合も編集シートを表示
-                            showingEditSheet = true
-                        }
                 }
                 
                 // Badges
@@ -68,6 +60,13 @@ struct TaskRow: View {
                     contextBadge
                 }
                 .opacity(task.status == .done ? 0.6 : 1.0)
+                
+                // Tags
+                if !task.tags.isEmpty {
+                    TaskTagDisplay(tags: task.tags)
+                        .opacity(task.status == .done ? 0.6 : 1.0)
+                        .padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
@@ -85,9 +84,10 @@ struct TaskRow: View {
                     .foregroundColor(TaskPlusTheme.colors.neonPrimary)
             }
             .buttonStyle(PlainButtonStyle())
+            .padding(.horizontal, 8) // タップ領域を拡大
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 20)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(task.status == .done ? TaskPlusTheme.colors.surface.opacity(0.7) : TaskPlusTheme.colors.surface)
@@ -169,10 +169,7 @@ struct TaskRow: View {
         .onDisappear {
             print("DEBUG: TaskRow disappeared for task: '\(task.title)' with status: \(task.status) and ID: \(task.id)")
         }
-        .onTapGesture {
-            // 背景をタップした場合も編集シートを表示（ラジオボタン以外の部分）
-            showingEditSheet = true
-        }
+        // タスクカード全体のタップは無効化（ミスタッチを防ぐ）
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(
@@ -188,12 +185,10 @@ struct TaskRow: View {
         )
         .scaleEffect(isPressed ? 0.98 : 1.0)
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isPressed)
-        .onTapGesture {
-            // ラジオボタン部分をタップした場合は何もしない
-            // タスク詳細表示は別の方法で行う
-        }
+        // タスクカード全体のタップは無効化（ミスタッチを防ぐ）
         .onLongPressGesture(minimumDuration: 0.5) {
             // 長押しで並び替えモード開始
+            print("DEBUG: 長押しで並び替えモード開始")
             isDragging = true
             isPressed = true
         } onPressingChanged: { pressing in
@@ -208,8 +203,22 @@ struct TaskRow: View {
             // 長押しヒント
             VStack {
                 Spacer()
+                HStack {
+                    Spacer()
+                    Text("長押しで並び替え")
+                        .font(.caption2)
+                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(TaskPlusTheme.colors.surface.opacity(0.8))
+                        )
+                        .opacity(isDragging ? 1.0 : 0.0)
+                        .animation(.easeInOut(duration: 0.3), value: isDragging)
+                }
+                .padding(.bottom, 8)
             }
-            .padding(.top, 8)
         )
         .scaleEffect(isDragging ? 1.05 : 1.0)
         .shadow(
@@ -234,9 +243,9 @@ struct TaskRow: View {
                 Button(action: {
                     swipeOutAndExecute(onComplete, direction: .right)
                 }) {
-                    Label("完了", systemImage: "checkmark.circle.fill")
+                    Label("Inboxに戻す", systemImage: "tray")
                 }
-                .tint(TaskPlusTheme.colors.success)
+                .tint(TaskPlusTheme.colors.neonPrimary)
             } else {
                 // その他の場合（TodayViewでないInboxタスク）
                 Button(action: {
@@ -416,6 +425,7 @@ struct TaskRow: View {
                         }
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .padding(.horizontal, 8) // タップ領域を拡大
                 }
             } else {
                 // Today Viewでは優先度バーのみを表示

@@ -9,13 +9,13 @@ struct EditTaskSheet: View {
     @State private var notes: String
     @State private var estimatedTime: Int // 分単位
     @State private var priority: TaskPriority
-    @State private var isCompleted: Bool
     @State private var selectedCategoryId: UUID?
     @State private var showingDeleteAlert = false
     @State private var dueDate: Date?
     @State private var notificationEnabled: Bool
     @State private var notificationTime: Date?
     @State private var showingNotificationTimePicker = false
+    @State private var selectedTags: [String]
     
     init(task: TaskItem, taskStore: TaskStore) {
         self.task = task
@@ -24,11 +24,12 @@ struct EditTaskSheet: View {
         self._notes = State(initialValue: task.notes ?? "")
         self._estimatedTime = State(initialValue: 30) // デフォルト30分
         self._priority = State(initialValue: task.priority)
-        self._isCompleted = State(initialValue: task.status == .done)
+
         self._selectedCategoryId = State(initialValue: task.categoryId)
         self._dueDate = State(initialValue: task.due)
         self._notificationEnabled = State(initialValue: task.notificationEnabled)
         self._notificationTime = State(initialValue: task.notificationTime)
+        self._selectedTags = State(initialValue: task.tags)
     }
     
     var body: some View {
@@ -38,7 +39,7 @@ struct EditTaskSheet: View {
                 dueDateAndNotificationSection
                 detailSettingsSection
                 categorySection
-                completionSection
+                tagSection
                 deleteSection
             }
             .navigationTitle("タスクを編集")
@@ -215,23 +216,45 @@ struct EditTaskSheet: View {
     
     private var categorySection: some View {
         Section("カテゴリ") {
-            ForEach(taskStore.categories) { category in
-                CategorySelectionButton(
-                    category: category,
-                    isSelected: selectedCategoryId == category.id
-                ) {
-                    selectedCategoryId = selectedCategoryId == category.id ? nil : category.id
+            if taskStore.categories.isEmpty {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(TaskPlusTheme.colors.warning)
+                    Text("カテゴリがありません")
+                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                    Spacer()
                 }
+                .padding(.vertical, 8)
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    ForEach(taskStore.categories) { category in
+                        CategorySelectionButton(
+                            category: category,
+                            isSelected: selectedCategoryId == category.id
+                        ) {
+                            selectedCategoryId = selectedCategoryId == category.id ? nil : category.id
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
             }
         }
     }
     
-    private var completionSection: some View {
+    private var tagSection: some View {
         Section {
-            Toggle("完了済み", isOn: $isCompleted)
-                .tint(TaskPlusTheme.colors.success)
+            TagSelectionView(
+                taskStore: taskStore,
+                selectedTags: $selectedTags
+            )
         }
     }
+    
+
     
     private var deleteSection: some View {
         Section {
@@ -253,15 +276,13 @@ struct EditTaskSheet: View {
         updatedTask.due = dueDate
         updatedTask.priority = priority
         updatedTask.categoryId = selectedCategoryId
+        updatedTask.tags = selectedTags
         updatedTask.updatedAt = Date()
         
         // 通知設定を更新
         taskStore.updateTaskNotification(updatedTask, notificationEnabled: notificationEnabled, notificationTime: notificationTime)
         
-        // 完了状態を更新
-        if isCompleted && updatedTask.status != .done {
-            taskStore.completeTask(updatedTask)
-        }
+
         
         dismiss()
     }
@@ -371,26 +392,36 @@ struct CategorySelectionButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 Image(systemName: category.icon.systemName)
-                    .font(.title3)
+                    .font(.title2)
                     .foregroundColor(isSelected ? .white : category.color.color)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 36, height: 36)
                     .background(
                         Circle()
-                            .fill(isSelected ? category.color.color : category.color.color.opacity(0.1))
+                            .fill(isSelected ? category.color.color : category.color.color.opacity(0.15))
                     )
                 
                 Text(category.name)
                     .font(.caption)
                     .fontWeight(.medium)
                     .foregroundColor(isSelected ? .white : TaskPlusTheme.colors.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 8)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(isSelected ? category.color.color : TaskPlusTheme.colors.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(
+                                isSelected ? Color.clear : category.color.color.opacity(0.3),
+                                lineWidth: 1
+                            )
+                    )
             )
         }
         .buttonStyle(PlainButtonStyle())

@@ -9,7 +9,7 @@ class NotificationManager: ObservableObject {
     @Published var isNotificationsEnabled = false
     @Published var notificationSettings = NotificationSettings()
     
-    private init() {
+    init() {
         checkNotificationStatus()
         loadNotificationSettings()
         setupNotificationCategories()
@@ -17,10 +17,13 @@ class NotificationManager: ObservableObject {
     
     // MARK: - Notification Permission
     func requestNotificationPermission() async -> Bool {
+        print("DEBUG: Requesting notification permission...")
         do {
             let granted = try await UNUserNotificationCenter.current().requestAuthorization(
-                options: [.alert, .badge, .sound, .provisional]
+                options: [.alert, .badge, .sound]
             )
+            
+            print("DEBUG: Notification permission granted: \(granted)")
             
             await MainActor.run {
                 self.isNotificationsEnabled = granted
@@ -28,7 +31,7 @@ class NotificationManager: ObservableObject {
             
             return granted
         } catch {
-            print("Notification permission error: \(error)")
+            print("ERROR: Notification permission error: \(error)")
             return false
         }
     }
@@ -37,6 +40,10 @@ class NotificationManager: ObservableObject {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
                 self.isNotificationsEnabled = settings.authorizationStatus == .authorized
+                print("DEBUG: Notification authorization status: \(settings.authorizationStatus.rawValue)")
+                print("DEBUG: Alert setting: \(settings.alertSetting.rawValue)")
+                print("DEBUG: Badge setting: \(settings.badgeSetting.rawValue)")
+                print("DEBUG: Sound setting: \(settings.soundSetting.rawValue)")
             }
         }
     }
@@ -55,6 +62,9 @@ class NotificationManager: ObservableObject {
         content.sound = .default
         content.badge = 1
         content.categoryIdentifier = "TASK_REMINDER"
+        // ロック画面と通知センターでの表示を確実にする
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
         
         // 通知のタイミングを設定
         let triggerDate = Calendar.current.date(byAdding: .minute, value: -notificationSettings.reminderTime, to: dueDate) ?? dueDate
@@ -92,6 +102,9 @@ class NotificationManager: ObservableObject {
         content.body = "今日完了すべきタスクを確認しましょう"
         content.sound = .default
         content.categoryIdentifier = "DAILY_SUMMARY"
+        // ロック画面と通知センターでの表示を確実にする
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
         
         // 毎朝9時に通知
         var dateComponents = DateComponents()
@@ -122,6 +135,9 @@ class NotificationManager: ObservableObject {
         content.body = "\(taskTitle)の集中時間が終了しました"
         content.sound = .default
         content.categoryIdentifier = "FOCUS_SESSION"
+        // ロック画面と通知センターでの表示を確実にする
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: duration, repeats: false)
         
@@ -266,6 +282,39 @@ class NotificationManager: ObservableObject {
             focusSessionCategory,
             testNotificationCategory
         ])
+        
+        print("DEBUG: Notification categories set up successfully")
+    }
+    
+    // MARK: - Test Notification
+    func scheduleTestNotification() {
+        print("DEBUG: Scheduling test notification...")
+        
+        let content = UNMutableNotificationContent()
+        content.title = "テスト通知"
+        content.body = "通知機能が正常に動作しています"
+        content.sound = .default
+        content.badge = 1
+        content.categoryIdentifier = "TEST_NOTIFICATION"
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
+        
+        // 5秒後に通知
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        
+        let request = UNNotificationRequest(
+            identifier: "test_notification",
+            content: content,
+            trigger: trigger
+        )
+        
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("ERROR: Failed to schedule test notification: \(error)")
+            } else {
+                print("SUCCESS: Test notification scheduled successfully")
+            }
+        }
     }
 }
 

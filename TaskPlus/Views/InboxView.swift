@@ -21,6 +21,19 @@ enum SortOption: String, CaseIterable {
     }
 }
 
+// 並び替え方向の列挙型
+enum SortDirection: String, CaseIterable {
+    case ascending = "昇順"
+    case descending = "降順"
+    
+    var icon: String {
+        switch self {
+        case .ascending: return "arrow.up"
+        case .descending: return "arrow.down"
+        }
+    }
+}
+
 // 表示モードの列挙型
 enum DisplayMode: String, CaseIterable {
     case list = "リスト表示"
@@ -36,30 +49,18 @@ enum DisplayMode: String, CaseIterable {
 
 struct InboxView: View {
     @ObservedObject var taskStore: TaskStore
-    @ObservedObject var guideManager: GuideModeManager
-    @State private var showingAddSheet = false
     @State private var inlineAddText = ""
     @State private var showingSortMenu = false
     @State private var selectedSortOption: SortOption = .manual
+    @State private var selectedSortDirection: SortDirection = .descending
     @State private var selectedDisplayMode: DisplayMode = .list
     @State private var hideCompletedTasks: Bool = false
+    @State private var selectedFilterTags: Set<String> = []
     
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // ガイドモードのプログレスバー
-                if guideManager.shouldShowGuide {
-                    GuideProgressBar(guideManager: guideManager)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                }
-                
-                // コンシェルジュカード
-                if guideManager.shouldShowGuide {
-                    conciergeCard
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                }
+
                 
                 if taskStore.inboxTasks.isEmpty && taskStore.doneTasks.isEmpty {
                     emptyStateView
@@ -78,79 +79,167 @@ struct InboxView: View {
                         print("DEBUG: TaskItem created with id: \(task.id)")
                         taskStore.addTask(task)
                         print("DEBUG: addTask completed")
-                        // タスク追加後、ガイドの次のステップに進む
-                        if guideManager.shouldShowGuide {
-                            guideManager.nextStep()
-                        }
+
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                 }
             }
             .background(TaskPlusTheme.colors.bg)
-            .navigationTitle("Inbox")
-            .navigationBarTitleDisplayMode(.large)
-            .onChange(of: taskStore.inboxTasks.count) { _ in
-                // タスク数が変更された時にUIを更新
-                print("DEBUG: inboxTasks count changed to \(taskStore.inboxTasks.count)")
-            }
-            .onChange(of: taskStore.doneTasks.count) { _ in
-                // 完了タスク数が変更された時にもUIを更新
-                print("DEBUG: doneTasks count changed to \(taskStore.doneTasks.count)")
-            }
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        // Apple公式推奨のPickerを使用して並び替えオプションを表示
-                        Picker("並び替え", selection: $selectedSortOption) {
-                            ForEach(SortOption.allCases, id: \.self) { option in
-                                Label(option.rawValue, systemImage: option.icon)
-                                    .tag(option)
-                            }
-                        }
-                        .pickerStyle(.menu) // メニュー形式で表示
-                        .onChange(of: selectedSortOption) { _ in
-                            sortTasks()
-                        }
-                        
-                        Divider()
-                        
-                        // 表示モードの選択
-                        Picker("表示", selection: $selectedDisplayMode) {
-                            ForEach(DisplayMode.allCases, id: \.self) { mode in
-                                Label(mode.rawValue, systemImage: mode.icon)
-                                    .tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        
-                        Divider()
-                        
-                        // 実行済みタスクの表示/非表示切り替え
-                        Button(action: {
-                            hideCompletedTasks.toggle()
-                        }) {
-                            Label(
-                                hideCompletedTasks ? "実行済みを表示" : "実行済みを非表示",
-                                systemImage: hideCompletedTasks ? "eye" : "eye.slash"
-                            )
-                        }
-                        
-                        Divider()
-                        
-                        Button("新しいタスクを追加") {
-                            showingAddSheet = true
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                            .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                ToolbarItem(placement: .principal) {
+                    HStack {
+                        Text("Inbox")
                             .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(TaskPlusTheme.colors.textPrimary)
+                        
+                        Spacer()
+                        
+                        Menu {
+                            // 表示順序の選択
+                            Menu("表示順序") {
+                                ForEach(SortOption.allCases, id: \.self) { option in
+                                    Button(action: {
+                                        selectedSortOption = option
+                                        sortTasks()
+                                    }) {
+                                        HStack {
+                                            if selectedSortOption == option {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                            } else {
+                                                Image(systemName: "circle")
+                                                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                                            }
+                                            Label(option.rawValue, systemImage: option.icon)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // 並び替え方向の選択（優先度順の場合のみ表示）
+                            if selectedSortOption == .priority {
+                                Menu("並び替え方向") {
+                                    Button(action: {
+                                        selectedSortDirection = .descending
+                                        sortTasks()
+                                    }) {
+                                        HStack {
+                                            if selectedSortDirection == .descending {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                            } else {
+                                                Image(systemName: "circle")
+                                                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                                            }
+                                            Label("高優先順位が先", systemImage: "arrow.up")
+                                        }
+                                    }
+                                    
+                                    Button(action: {
+                                        selectedSortDirection = .ascending
+                                        sortTasks()
+                                    }) {
+                                        HStack {
+                                            if selectedSortDirection == .ascending {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                            } else {
+                                                Image(systemName: "circle")
+                                                    .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                                            }
+                                            Label("低優先順位が先", systemImage: "arrow.down")
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            // タグフィルタリング
+                            Menu("タグで抽出") {
+                                if taskStore.tags.isEmpty {
+                                    Text("利用可能なタグがありません")
+                                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                                        .font(.caption)
+                                } else {
+                                    ForEach(taskStore.tags, id: \.self) { tag in
+                                        Button(action: {
+                                            if selectedFilterTags.contains(tag) {
+                                                selectedFilterTags.remove(tag)
+                                            } else {
+                                                selectedFilterTags.insert(tag)
+                                            }
+                                        }) {
+                                            HStack {
+                                                if selectedFilterTags.contains(tag) {
+                                                    Image(systemName: "checkmark")
+                                                        .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                                } else {
+                                                    Image(systemName: "circle")
+                                                        .foregroundColor(TaskPlusTheme.colors.textSecondary)
+                                                }
+                                                Label(tag, systemImage: "tag")
+                                            }
+                                        }
+                                    }
+                                    
+                                    if !selectedFilterTags.isEmpty {
+                                        Divider()
+                                        
+                                        Button(action: {
+                                            selectedFilterTags.removeAll()
+                                        }) {
+                                            Label("フィルターをクリア", systemImage: "xmark.circle")
+                                                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            Divider()
+                            
+                            // 表示モードの選択
+                            Picker("表示", selection: $selectedDisplayMode) {
+                                ForEach(DisplayMode.allCases, id: \.self) { mode in
+                                    Label(mode.rawValue, systemImage: mode.icon)
+                                        .tag(mode)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            
+                            Divider()
+                            
+                            // 実行済みタスクの表示/非表示切り替え
+                            Button(action: {
+                                hideCompletedTasks.toggle()
+                            }) {
+                                Label(
+                                    hideCompletedTasks ? "実行済みを表示" : "実行済みを非表示",
+                                    systemImage: hideCompletedTasks ? "eye" : "eye.slash"
+                                )
+                            }
+                            
+
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                                .font(.body)
+                        }
                     }
                 }
             }
-            .sheet(isPresented: $showingAddSheet) {
-                AddTaskSheet(taskStore: taskStore)
+            .onChange(of: taskStore.inboxTasks.count) {
+                // タスク数が変更された時にUIを更新
+                print("DEBUG: inboxTasks count changed to \(taskStore.inboxTasks.count)")
             }
+            .onChange(of: taskStore.inboxDoneTasks.count) {
+                // Inboxで完了したタスク数が変更された時にもUIを更新
+                print("DEBUG: inboxDoneTasks count changed to \(taskStore.inboxDoneTasks.count)")
+            }
+
         }
     }
     
@@ -162,12 +251,16 @@ struct InboxView: View {
             break
         case .priority:
             taskStore.inboxTasks.sort { (task1: TaskItem, task2: TaskItem) in
-                let priority1 = task1.priority.rawValue
-                let priority2 = task2.priority.rawValue
+                let priority1 = task1.priority.priorityValue
+                let priority2 = task2.priority.priorityValue
                 if priority1 == priority2 {
                     return task1.sortOrder < task2.sortOrder
                 }
-                return priority1 > priority2 // 高優先度を上に
+                if selectedSortDirection == .descending {
+                    return priority1 > priority2 // 高優先度を上に
+                } else {
+                    return priority1 < priority2 // 低優先度を上に
+                }
             }
         case .dueDate:
             taskStore.inboxTasks.sort { (task1: TaskItem, task2: TaskItem) in
@@ -300,10 +393,10 @@ struct InboxView: View {
                         .padding(.bottom, 8)
                     }
                     
-                    // 完了済みタスク
-                    if !hideCompletedTasks && !taskStore.doneTasks.isEmpty {
+                    // 完了済みタスク（Inboxで完了したタスクのみ）
+                    if !hideCompletedTasks && !taskStore.inboxDoneTasks.isEmpty {
                         Section {
-                            ForEach(taskStore.doneTasks.filter { $0.status == .done }, id: \.id) { task in
+                            ForEach(taskStore.inboxDoneTasks, id: \.id) { task in
                                 TaskRow(
                                     task: task,
                                     isInbox: true,
@@ -326,7 +419,7 @@ struct InboxView: View {
                                 
                                 Spacer()
                                 
-                                Text("\(taskStore.doneTasks.filter { $0.status == .done }.count)")
+                                Text("\(taskStore.inboxDoneTasks.count)")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                     .foregroundColor(TaskPlusTheme.colors.textSecondary)
@@ -340,9 +433,9 @@ struct InboxView: View {
                 .background(TaskPlusTheme.colors.bg)
                 // リスト更新時のアニメーション制御
                 .animation(.spring(response: 0.6, dampingFraction: 0.8), value: taskStore.inboxTasks.count)
-                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: taskStore.doneTasks.count)
+                .animation(.spring(response: 0.6, dampingFraction: 0.8), value: taskStore.inboxDoneTasks.count)
                 // Listの強制更新のためのID
-                .id("\(taskStore.inboxTasks.count)_\(taskStore.doneTasks.count)_\(sortedTasks.count)")
+                .id("\(taskStore.inboxTasks.count)_\(taskStore.inboxDoneTasks.count)_\(sortedTasks.count)")
             } else {
                 // 空の状態
                 Text("タスクがありません")
@@ -351,24 +444,26 @@ struct InboxView: View {
         }
     }
     
-    // フィルタリングされたタスクリスト（InboxViewではinboxTasksと完了済みタスクを表示）
+    // タグフィルタリングを適用したタスクリスト
     private var filteredTasks: [TaskItem] {
-        // 直接的なデータ参照で遅延を防止
         let inboxTasks = taskStore.inboxTasks
-        let doneTasks = taskStore.doneTasks
-        let allTasks = inboxTasks + doneTasks
-        let result = hideCompletedTasks ? allTasks.filter { $0.status != .done } : allTasks
-        print("DEBUG: filteredTasks calculated. inboxTasks: \(inboxTasks.count), doneTasks: \(doneTasks.count), result: \(result.count)")
-        return result
+        let inboxDoneTasks = taskStore.inboxDoneTasks
+        let allTasks = inboxTasks + inboxDoneTasks
+        
+        if selectedFilterTags.isEmpty {
+            return allTasks
+        } else {
+            return allTasks.filter { task in
+                !Set(task.tags).isDisjoint(with: selectedFilterTags)
+            }
+        }
     }
     
     // 並び替え済みのタスクリスト（シンプル化）
     private var sortedTasks: [TaskItem] {
-        // 直接的なデータ参照で遅延を防止
-        let inboxTasks = taskStore.inboxTasks
-        let doneTasks = taskStore.doneTasks
-        let allTasks = inboxTasks + doneTasks
-        let tasks = hideCompletedTasks ? allTasks.filter { $0.status != .done } : allTasks
+        // タグフィルタリングを適用
+        let filteredAllTasks = filteredTasks
+        let tasks = hideCompletedTasks ? filteredAllTasks.filter { $0.status != .done } : filteredAllTasks
         
         let result: [TaskItem]
         
@@ -377,10 +472,16 @@ struct InboxView: View {
             result = tasks.sorted { $0.sortOrder < $1.sortOrder }
         case .priority:
             result = tasks.sorted { 
-                if $0.priority.rawValue == $1.priority.rawValue {
+                let priority1 = $0.priority.priorityValue
+                let priority2 = $1.priority.priorityValue
+                if priority1 == priority2 {
                     return $0.sortOrder < $1.sortOrder
                 }
-                return $0.priority.rawValue > $1.priority.rawValue
+                if selectedSortDirection == .descending {
+                    return priority1 > priority2 // 高優先度を上に
+                } else {
+                    return priority1 < priority2 // 低優先度を上に
+                }
             }
         case .dueDate:
             result = tasks.sorted { 
@@ -407,7 +508,6 @@ struct InboxView: View {
         }
         
         print("DEBUG: sortedTasks calculated. input: \(tasks.count), output: \(result.count)")
-        print("DEBUG: inboxTasks count: \(inboxTasks.count), doneTasks count: \(doneTasks.count)")
         print("DEBUG: active tasks (status != .done): \(tasks.filter { $0.status != .done }.count)")
         print("DEBUG: active task titles: \(tasks.filter { $0.status != .done }.map { $0.title })")
         print("DEBUG: all tasks with status: \(tasks.map { "\($0.title): \($0.status)" })")
@@ -507,43 +607,10 @@ struct InboxView: View {
     // Apple公式の方法でアニメーションを制御
     // TaskStoreのwithAnimationを使用して状態変更時にアニメーションを制御
     
-    // コンシェルジュカード
-    private var conciergeCard: some View {
-        if taskStore.inboxTasks.isEmpty && taskStore.doneTasks.isEmpty {
-            return ConciergeCard(
-                message: "頭の中を整理してみましょう",
-                icon: "plus.circle",
-                actionText: "新しいタスクを追加して、まずは書き出してみてください"
-            ) {
-                // タスク追加シートを表示
-                showingAddSheet = true
-            }
-        } else if taskStore.todayTasks.isEmpty {
-            return ConciergeCard(
-                message: "今日やることを選んでみませんか？",
-                icon: "arrow.right.circle",
-                actionText: "Inboxのタスクを右にスワイプして、今日やるものに移動させてください"
-            ) {
-                // ガイドの次のステップに進む
-                guideManager.nextStep()
-            }
-        } else {
-            return ConciergeCard(
-                message: "素晴らしい！今日やることが決まりました",
-                icon: "checkmark.circle.fill",
-                actionText: "次のステップに進みましょう"
-            ) {
-                // ガイドの次のステップに進む
-                guideManager.nextStep()
-            }
-        }
-    }
+
 }
 
 #Preview {
-    InboxView(
-        taskStore: TaskStore(),
-        guideManager: GuideModeManager()
-    )
+    InboxView(taskStore: TaskStore())
         .preferredColorScheme(.dark)
 }

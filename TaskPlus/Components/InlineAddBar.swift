@@ -6,6 +6,7 @@ struct InlineAddBar: View {
     
     @FocusState private var isFocused: Bool
     @State private var isGlowing = false
+    @State private var isAddingTask = false // タスク追加時のアニメーション用
     
     var body: some View {
         HStack(spacing: 12) {
@@ -14,7 +15,7 @@ struct InlineAddBar: View {
                     .foregroundColor(TaskPlusTheme.colors.neonPrimary)
                     .font(.title2)
                 
-                TextField("すぐ書いてEnterで追加", text: $text)
+                TextField("タスクを追加", text: $text)
                     .textFieldStyle(PlainTextFieldStyle())
                     .foregroundColor(TaskPlusTheme.colors.textPrimary)
                     .focused($isFocused)
@@ -39,6 +40,23 @@ struct InlineAddBar: View {
                 .shadow(color: .black.opacity(0.25), radius: 8, x: 0, y: 4)
         )
         .overlay(
+            // 光るエフェクト（タスク追加時）
+            RoundedRectangle(cornerRadius: 16)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            TaskPlusTheme.colors.neonPrimary.opacity(isAddingTask ? 0.8 : 0),
+                            TaskPlusTheme.colors.neonPrimary.opacity(isAddingTask ? 0.4 : 0),
+                            Color.clear
+                        ],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                )
+                .scaleEffect(isAddingTask ? 1.1 : 1.0)
+                .opacity(isAddingTask ? 1 : 0)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(
                     isFocused ? TaskPlusTheme.colors.neonPrimary : Color.clear,
@@ -51,7 +69,11 @@ struct InlineAddBar: View {
                     y: 0
                 )
         )
+        // タスクチケット側のアニメーションに変更するため、InlineAddBarのアニメーションを無効化
+        // .offset(y: isAddingTask ? -20 : 0) // 下から上へのスワイプ効果
+        // .scaleEffect(isAddingTask ? 1.05 : 1.0) // スケール効果
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)
+        // .animation(.easeInOut(duration: 0.6), value: isAddingTask)
         .onAppear {
             startGlowAnimation()
         }
@@ -61,13 +83,29 @@ struct InlineAddBar: View {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
         
-        onAdd(trimmedText)
+        // テキストをクリアしてフォーカスを外す（即座に実行）
+        let taskText = trimmedText
         text = ""
         isFocused = false
         
-        // Haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .soft)
-        impactFeedback.impactOccurred()
+        // タスクチケット側のアニメーションに変更するため、InlineAddBarのアニメーションを簡素化
+        withAnimation(.easeIn(duration: 0.1)) {
+            isAddingTask = true
+        }
+        
+        // すぐにタスクを追加（タスクチケット側のアニメーションが動作する）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            onAdd(taskText)
+            
+            // Haptic feedback
+            let impactFeedback = UIImpactFeedbackGenerator(style: .soft)
+            impactFeedback.impactOccurred()
+            
+            // アニメーション終了
+            withAnimation(.easeOut(duration: 0.1)) {
+                isAddingTask = false
+            }
+        }
     }
     
     private func startGlowAnimation() {

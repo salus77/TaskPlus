@@ -9,6 +9,7 @@ class TaskStore: ObservableObject {
     @Published var todayTasks: [TaskItem] = []
     @Published var doneTasks: [TaskItem] = []
     @Published var categories: [Category] = []
+    @Published var tags: [String] = []
     
     // Generic data structure for external integration
     private var taskPlusData: TaskPlusData
@@ -25,6 +26,9 @@ class TaskStore: ObservableObject {
             Category(name: "家事", icon: .house, color: .orange)
         ]
         
+        // デフォルトタグを追加
+        tags = ["#Someday"]
+        
         // Initialize generic data structure with empty data first
         taskPlusData = TaskPlusData()
         
@@ -33,6 +37,48 @@ class TaskStore: ObservableObject {
         
         // 通知カテゴリを設定
         notificationManager.setupNotificationCategories()
+    }
+    
+    // MARK: - Tag Management
+    func addTag(_ tag: String) {
+        let trimmedTag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTag.isEmpty && !tags.contains(trimmedTag) {
+            tags.append(trimmedTag)
+            updateGenericData()
+        }
+    }
+    
+    func removeTag(_ tag: String) {
+        tags.removeAll { $0 == tag }
+        // そのタグを使用しているタスクからも削除
+        let allTasks = inboxTasks + todayTasks + doneTasks
+        for task in allTasks {
+            if task.tags.contains(tag) {
+                var updatedTask = task
+                updatedTask.tags.removeAll { $0 == tag }
+                updateTask(updatedTask)
+            }
+        }
+        updateGenericData()
+    }
+    
+    func updateTag(_ oldTag: String, to newTag: String) {
+        let trimmedNewTag = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNewTag.isEmpty && !tags.contains(trimmedNewTag) {
+            if let index = tags.firstIndex(of: oldTag) {
+                tags[index] = trimmedNewTag
+                // そのタグを使用しているタスクも更新
+                let allTasks = inboxTasks + todayTasks + doneTasks
+                for task in allTasks {
+                    if task.tags.contains(oldTag) {
+                        var updatedTask = task
+                        updatedTask.tags = updatedTask.tags.map { $0 == oldTag ? trimmedNewTag : $0 }
+                        updateTask(updatedTask)
+                    }
+                }
+                updateGenericData()
+            }
+        }
     }
     
     // MARK: - Generic Data Management
@@ -209,30 +255,46 @@ class TaskStore: ObservableObject {
         
         // 外部データの更新は非同期で実行
         DispatchQueue.global(qos: .utility).async {
-            self.updateGenericData()
+            Task { @MainActor in
+                self.updateGenericData()
+            }
         }
     }
     
     // MARK: - Notification Management
     private func scheduleNotificationForTask(_ task: TaskItem) {
         // 期限がある場合は期限前リマインダー
-        if let dueDate = task.due {
+        if task.due != nil {
             notificationManager.scheduleTaskNotification(for: task)
         }
         
         // 個別の通知時刻が設定されている場合
         if let notificationTime = task.notificationTime {
-            scheduleCustomNotification(for: task, at: notificationTime)
+            print("DEBUG: Task has custom notification time: \(notificationTime)")
+            print("DEBUG: Current time: \(Date())")
+            print("DEBUG: Time difference: \(notificationTime.timeIntervalSince(Date())) seconds")
+            
+            // 通知時刻が過去の場合はスケジュールしない
+            if notificationTime > Date() {
+                scheduleCustomNotification(for: task, at: notificationTime)
+            } else {
+                print("WARNING: Notification time is in the past, skipping notification")
+            }
         }
     }
     
     private func scheduleCustomNotification(for task: TaskItem, at time: Date) {
+        print("DEBUG: Scheduling custom notification for task '\(task.title)' at \(time)")
+        
         let content = UNMutableNotificationContent()
         content.title = "タスクのリマインダー"
         content.body = task.title
         content.sound = .default
         content.badge = 1
         content.categoryIdentifier = "TASK_REMINDER"
+        // ロック画面と通知センターでの表示を確実にする
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 1.0
         
         let trigger = UNCalendarNotificationTrigger(
             dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: time),
@@ -245,9 +307,14 @@ class TaskStore: ObservableObject {
             trigger: trigger
         )
         
+        print("DEBUG: Notification request created with identifier: custom_task_\(task.id.uuidString)")
+        print("DEBUG: Trigger date: \(trigger.nextTriggerDate()?.description ?? "nil")")
+        
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
-                print("Failed to schedule custom notification: \(error)")
+                print("ERROR: Failed to schedule custom notification: \(error)")
+            } else {
+                print("SUCCESS: Custom notification scheduled successfully")
             }
         }
     }
@@ -349,6 +416,16 @@ class TaskStore: ObservableObject {
         updateGenericData()
         let notificationFeedback = UINotificationFeedbackGenerator()
         notificationFeedback.notificationOccurred(.success)
+    }
+    
+    // Inboxで完了したタスクのみを取得
+    var inboxDoneTasks: [TaskItem] {
+        return doneTasks.filter { $0.originalStatus == .inbox }
+    }
+    
+    // Todayで完了したタスクのみを取得
+    var todayDoneTasks: [TaskItem] {
+        return doneTasks.filter { $0.originalStatus == .today }
     }
     
     // 完了したタスクを再開する（元のステータスに戻す）
@@ -525,7 +602,7 @@ class TaskStore: ObservableObject {
     private func loadSampleData() {
         let sampleTasks = [
             TaskItem(title: "提案資料をまとめる", priority: .high, context: .work, categoryId: categories.first?.id, sortOrder: 0, notificationEnabled: true, notificationTime: nil),
-            TaskItem(title: "牛乳を買う", context: .errand, categoryId: categories[2].id, sortOrder: 1, notificationEnabled: true, notificationTime: nil),
+            TaskItem(title: "牛乳を買う", context: .errand, categoryId: categories[1].id, sortOrder: 1, notificationEnabled: true, notificationTime: nil),
             TaskItem(title: "田中さんに電話", context: .call, categoryId: categories.first?.id, sortOrder: 2, notificationEnabled: false, notificationTime: nil)
         ]
         
@@ -535,12 +612,12 @@ class TaskStore: ObservableObject {
     // MARK: - Computed Properties
     var todayProgress: Double {
         guard !todayTasks.isEmpty else { return 0.0 }
-        let completed = doneTasks.filter { $0.status == .done }.count
+        let completed = todayDoneTasks.count
         return Double(completed) / Double(todayTasks.count + completed)
     }
     
     var todayCompletedCount: Int {
-        doneTasks.filter { $0.status == .done }.count
+        todayDoneTasks.count
     }
     
     var todayTotalCount: Int {

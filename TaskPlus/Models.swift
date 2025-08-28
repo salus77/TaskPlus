@@ -206,6 +206,7 @@ struct TaskItem: Identifiable, Hashable {
     var priority: TaskPriority
     var context: TaskContext
     var categoryId: UUID?
+    var tags: [String] // タグの配列
     var sortOrder: Int // 並び替え順序を保存するフィールドを追加
     var notificationEnabled: Bool // 通知の有効/無効
     var notificationTime: Date? // 通知時刻（期限とは別に設定可能）
@@ -213,7 +214,7 @@ struct TaskItem: Identifiable, Hashable {
     var isRestoring: Bool = false // 復元時のアニメーション制御用
 
     
-    init(title: String, notes: String? = nil, due: Date? = nil, priority: TaskPriority = .normal, context: TaskContext = .none, categoryId: UUID? = nil, sortOrder: Int = 0, notificationEnabled: Bool = true, notificationTime: Date? = nil) {
+    init(title: String, notes: String? = nil, due: Date? = nil, priority: TaskPriority = .normal, context: TaskContext = .none, categoryId: UUID? = nil, tags: [String] = [], sortOrder: Int = 0, notificationEnabled: Bool = true, notificationTime: Date? = nil) {
         self.id = UUID()  // 初期化時に一度だけUUIDを生成
         self.title = title
         self.notes = notes
@@ -224,6 +225,7 @@ struct TaskItem: Identifiable, Hashable {
         self.priority = priority
         self.context = context
         self.categoryId = categoryId
+        self.tags = tags
         self.sortOrder = sortOrder
         self.notificationEnabled = notificationEnabled
         self.notificationTime = notificationTime
@@ -242,6 +244,7 @@ struct TaskItem: Identifiable, Hashable {
         self.priority = task.priority
         self.context = task.context
         self.categoryId = task.categoryId
+        self.tags = task.tags
         self.sortOrder = task.sortOrder
         self.notificationEnabled = task.notificationEnabled
         self.notificationTime = task.notificationTime
@@ -259,7 +262,7 @@ struct TaskItem: Identifiable, Hashable {
             priority: priority.rawValue,
             context: context.rawValue,
             categoryId: categoryId?.uuidString,
-            tags: [],
+            tags: tags,
             estimatedTime: nil,
             actualTime: nil,
             focusSessions: [],
@@ -314,6 +317,22 @@ enum TaskPriority: String, CaseIterable {
     case low = "low"
     case normal = "normal"
     case high = "high"
+    
+    var rawValue: String {
+        switch self {
+        case .low: return "low"
+        case .normal: return "normal"
+        case .high: return "high"
+        }
+    }
+    
+    var priorityValue: Int {
+        switch self {
+        case .low: return 1
+        case .normal: return 2
+        case .high: return 3
+        }
+    }
     
     var displayName: String {
         switch self {

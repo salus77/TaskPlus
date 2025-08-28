@@ -93,6 +93,22 @@ struct NotificationSettingsView: View {
                     }
                 }
                 
+                // テスト通知
+                Section("テスト") {
+                    Button(action: {
+                        notificationManager.scheduleTestNotification()
+                        testResultMessage = "テスト通知を5秒後に送信しました"
+                        showingTestResult = true
+                    }) {
+                        HStack {
+                            Image(systemName: "bell.badge")
+                                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                            Text("テスト通知を送信")
+                                .foregroundColor(TaskPlusTheme.colors.neonPrimary)
+                        }
+                    }
+                }
+                
                 // 静寂時間
                 Section("静寂時間") {
                     Toggle("静寂時間を設定", isOn: $settings.quietHoursEnabled)

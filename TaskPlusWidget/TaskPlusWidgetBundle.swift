@@ -2,7 +2,7 @@
 //  TaskPlusWidgetBundle.swift
 //  TaskPlusWidget
 //
-//  Created by Yasutaka Otsubo on 2025/08/25.
+//  Created by del mar y el sol on 2025/08/25.
 //
 
 import WidgetKit
